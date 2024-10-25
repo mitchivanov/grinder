@@ -1,0 +1,215 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% csrf_token %}
+<div class="row">
+    <div class="col-md-6">
+        <h2>{{ strategy.name }}</h2>
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5>Status: <span id="status-badge" class="badge bg-{{ strategy.status|lower }}">{{ strategy.status }}</span></h5>
+                <p>Symbol: {{ strategy.symbol }}</p>
+                <p>Grids: {{ strategy.grids }}</p>
+                <div class="btn-group">
+                    <button id="start-btn" class="btn btn-success" {% if strategy.status == 'RUNNING' %}disabled{% endif %}>Start</button>
+                    <button id="stop-btn" class="btn btn-danger" {% if strategy.status != 'RUNNING' %}disabled{% endif %}>Stop</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <!-- Live Updates -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Live Updates</span>
+                <div>
+                    <span class="badge bg-success" id="connection-status">Connected</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-3">
+                    <div>
+                        <h5>Current Price: <span id="current-price" class="text-primary">-</span></h5>
+                        <h5>Realized Profit: <span id="realized-profit" class="text-success">-</span></h5>
+                    </div>
+                    <div>
+                        <h5>24h Change: <span id="price-change" class="text-muted">-</span></h5>
+                        <h5>Volume: <span id="volume" class="text-muted">-</span></h5>
+                    </div>
+                </div>
+                
+                <!-- Activity Log -->
+                <div class="card">
+                    <div class="card-header">
+                        Activity Log
+                    </div>
+                    <div id="trade-log" class="list-group list-group-flush" style="height: 400px; overflow-y: auto;">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-header">
+        Текущее состояние
+    </div>
+    <div class="card-body">
+        <p>Текущая цена: <span id="current-price">-</span></p>
+        <p>Отклонение: <span id="price-deviation">-</span></p>
+        <div id="active-orders"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const strategyId = {{ strategy.id }};
+let ws;
+
+function connectWebSocket() {
+    ws = new WebSocket(`ws://${window.location.host}/ws/trading/strategy_${strategyId}/`);
+    
+    ws.onopen = function() {
+        console.log('WebSocket connected');
+        document.getElementById('connection-status').textContent = 'Connected';
+        document.getElementById('connection-status').className = 'badge bg-success';
+    };
+    
+    ws.onerror = function(error) {
+        console.error('WebSocket error:', error);
+        document.getElementById('connection-status').textContent = 'Error';
+        document.getElementById('connection-status').className = 'badge bg-danger';
+    };
+    
+    ws.onclose = function() {
+        console.log('WebSocket disconnected');
+        document.getElementById('connection-status').textContent = 'Disconnected';
+        document.getElementById('connection-status').className = 'badge bg-warning';
+        setTimeout(connectWebSocket, 5000);
+    };
+    
+    ws.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        handleWebSocketMessage(data);
+    };
+}
+
+function handleWebSocketMessage(data) {
+    const timestamp = new Date().toLocaleTimeString();
+    
+    switch(data.type) {
+        case 'initialization':
+            addLogEntry('Инициализация', 
+                `${data.data.message} (${data.data.initial_price} USDT)`);
+            break;
+        case 'grid_levels':
+            addLogEntry('Уровни сетки', 
+                `${data.data.message}<br>Buy levels: ${data.data.buy_levels.join(', ')}<br>` +
+                `Sell levels: ${data.data.sell_levels.join(', ')}`);
+            break;
+        case 'order_sizes':
+            addLogEntry('Размеры ордеров', 
+                `${data.data.message}<br>Buy sizes: ${data.data.buy_sizes.join(', ')}<br>` +
+                `Sell sizes: ${data.data.sell_sizes.join(', ')}`);
+            break;
+        case 'price_update':
+            document.getElementById('current-price').textContent = 
+                `${data.data.current_price} USDT`;
+            document.getElementById('price-deviation').textContent = 
+                `${data.data.deviation.toFixed(2)}%`;
+            break;
+        case 'active_orders':
+            updateActiveOrders(data.data);
+            break;
+        case 'trade':
+            addLogEntry('Сделка', 
+                `${data.data.type}: ${data.data.quantity} @ ${data.data.price} USDT`);
+            break;
+        case 'order_placed':
+            addLogEntry('Ордер размещен', 
+                `Тип: ${data.data.order_type}, Цена: ${data.data.price} USDT, Количество: ${data.data.quantity}`, 'info');
+            break;
+        case 'error':
+            addLogEntry('Ошибка', data.data.message, 'error');
+            break;
+        default:
+            console.warn('Неизвестный тип сообщения:', data.type);
+    }
+}
+
+function addLogEntry(type, message, badgeType = 'secondary') {
+    const tradeLog = document.getElementById('trade-log');
+    const timestamp = new Date().toLocaleTimeString();
+    
+    const entry = document.createElement('div');
+    entry.className = 'list-group-item';
+    entry.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <span class="badge bg-${badgeType}">${type}</span>
+                <span class="ms-2">${message}</span>
+            </div>
+            <small class="text-muted">${timestamp}</small>
+        </div>
+    `;
+    
+    tradeLog.insertBefore(entry, tradeLog.firstChild);
+}
+
+function updateActiveOrders(data) {
+    const ordersContainer = document.getElementById('active-orders');
+    ordersContainer.innerHTML = `
+        <h6>Активные ордера на покупку:</h6>
+        <ul>${data.buy_positions.map(pos => 
+            `<li>${pos.quantity} @ ${pos.price} USDT</li>`).join('')}</ul>
+        <h6>Активные ордера на продажу:</h6>
+        <ul>${data.sell_positions.map(pos => 
+            `<li>${pos.quantity} @ ${pos.price} USDT</li>`).join('')}</ul>
+    `;
+}
+
+connectWebSocket();
+
+function updateButtons(status) {
+    document.getElementById('start-btn').disabled = (status === 'RUNNING');
+    document.getElementById('stop-btn').disabled = (status !== 'RUNNING');
+}
+
+document.getElementById('start-btn').onclick = async function() {
+    try {
+        const response = await fetch(`/api/strategies/${strategyId}/start/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            }
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            alert(`Error: ${error.error || 'Unknown error'}`);
+        }
+    } catch (e) {
+        alert('Error connecting to server');
+    }
+};
+
+document.getElementById('stop-btn').onclick = async function() {
+    try {
+        const response = await fetch(`/api/strategies/${strategyId}/stop/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            }
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            alert(`Error: ${error.error || 'Unknown error'}`);
+        }
+    } catch (e) {
+        alert('Error connecting to server');
+    }
+};
+</script>
+{% endblock %}

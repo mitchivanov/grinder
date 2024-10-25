@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h2>Trading Strategies</h2>
+<div class="mb-3">
+    <a href="{% url 'strategy_create' %}" class="btn btn-primary">Create New Strategy</a>
+</div>
+
+<div class="list-group">
+    {% for strategy in strategies %}
+    <div class="list-group-item">
+        <div class="d-flex justify-content-between align-items-center">
+            <h5>{{ strategy.name }} ({{ strategy.symbol }})</h5>
+            <div>
+                <span class="badge bg-{{ strategy.status|lower }}">{{ strategy.status }}</span>
+                <a href="{% url 'strategy_detail' strategy.id %}" class="btn btn-sm btn-info ms-2">Details</a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

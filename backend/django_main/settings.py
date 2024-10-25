@@ -27,6 +27,8 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
+BINANCE_API_KEY = 'Buvqcle5habciiuPVB95SXNHhvcGM7fH5jf8UR1UtMwHsIqcGcG8LE3Dw9fmnFVE'
+BINANCE_API_SECRET = 'JUwPcdL9RGIoQqxBF5zQJ4rNR4l0ZYsUJVqdnDmHyccxtMAdFHQNt9dlb89NeRft'
 
 # Application definition
 
@@ -37,9 +39,10 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'rest_framework',         # For API endpoints
-    'channels',               # For WebSocket support
-    'django_bot',             # Your app
+    'rest_framework',
+    'channels',
+    'widget_tweaks',
+    'trading',
 ]
 
 MIDDLEWARE = [
@@ -57,7 +60,9 @@ ROOT_URLCONF = 'django_main.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [
+            BASE_DIR / 'templates',
+        ],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -129,6 +134,6 @@ ASGI_APPLICATION = 'django_main.asgi.application'
 
 CHANNEL_LAYERS = {
     'default': {
-        'BACKEND': 'channels.layers.InMemoryChannelLayer',
-    },
+        'BACKEND': 'channels.layers.InMemoryChannelLayer'
+    }
 }
